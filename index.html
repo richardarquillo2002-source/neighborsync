@@ -191,12 +191,16 @@
                                     </select>
                                 </div>
                                 <div>
+                                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Full Name *</label>
+                                    <input type="text" id="reg-name" required placeholder="Juan Dela Cruz" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                </div>
+                                <div>
                                     <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Email Address *</label>
                                     <input type="email" id="reg-email" required placeholder="name@domain.com" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
                                 </div>
                                 <div>
                                     <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Contact Phone *</label>
-                                    <input type="text" id="reg-phone" required placeholder="555-0100" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                    <input type="text" id="reg-phone" required maxlength="11" pattern="09[0-9]{9}" placeholder="09123456789" title="Must be 11 digits starting with 09" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
                                 </div>
                                 <div id="role-extra-fields"></div>
                                 <div>
@@ -254,6 +258,7 @@
         async function handleRegister(e) {
             e.preventDefault();
             const role = document.getElementById('reg-role').value;
+            const name = document.getElementById('reg-name').value;
             const email = document.getElementById('reg-email').value;
             const phone = document.getElementById('reg-phone').value;
             const password = document.getElementById('reg-password').value;
@@ -263,7 +268,7 @@
             try {
                 const userCred = await auth.createUserWithEmailAndPassword(email, password);
                 const uid = userCred.user.uid;
-                const newUser = { id: uid, email, role, phone, roleDetail };
+                const newUser = { id: uid, name, email, role, phone, roleDetail };
 
                 await db.collection('users').doc(uid).set(newUser);
                 appState.currentUser = newUser;
@@ -322,7 +327,7 @@
                                 <div class="flex items-center space-x-2 truncate">
                                     <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold text-xs"><i class="fa-solid fa-user"></i></div>
                                     <div class="truncate">
-                                        <p class="text-xs font-medium text-white truncate">${appState.currentUser.email}</p>
+                                        <p class="text-xs font-medium text-white truncate">${appState.currentUser.name || appState.currentUser.email}</p>
                                         <p class="text-[10px] text-slate-400 truncate">${appState.currentRole}</p>
                                     </div>
                                 </div>
@@ -421,6 +426,7 @@
             e.preventDefault();
             await db.collection('requests').add({
                 account: appState.currentUser.email,
+                name: appState.currentUser.name || 'Anonymous',
                 category: document.getElementById('concern-cat').value,
                 location: document.getElementById('concern-loc').value,
                 desc: document.getElementById('concern-desc').value,
@@ -433,16 +439,17 @@
 
         function renderCommunityInfoTab() {
             const members = appState.db.users.filter(u => u.role === 'Resident / Homeowner');
-            return `<div class="grid grid-cols-1 md:grid-cols-2 gap-6"><div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"><h3 class="font-bold text-slate-800 mb-3">Members Directory</h3>${members.map(r=>`<div class="p-3 bg-slate-50 rounded-xl mb-2 flex justify-between text-sm"><div><p class="font-bold">${r.email}</p><p class="text-xs text-slate-500">${r.roleDetail || 'Resident'}</p></div><span class="text-xs">${r.phone}</span></div>`).join('')}</div></div>`;
+            return `<div class="grid grid-cols-1 md:grid-cols-2 gap-6"><div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"><h3 class="font-bold text-slate-800 mb-3">Members Directory</h3>${members.map(r=>`<div class="p-3 bg-slate-50 rounded-xl mb-2 flex justify-between text-sm"><div><p class="font-bold">${r.name || r.email}</p><p class="text-xs text-slate-500">${r.email} • ${r.roleDetail || 'Resident'}</p></div><span class="text-xs">${r.phone}</span></div>`).join('')}</div></div>`;
         }
 
         function renderProfileTab() {
             const u = appState.currentUser;
-            return `<div class="max-w-xl bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"><form onsubmit="updateProfile(event)" class="space-y-4"><div><label class="block text-xs font-bold text-slate-600 uppercase mb-1">Email</label><input type="email" value="${u.email}" disabled class="w-full p-3 border rounded-xl bg-slate-100 text-slate-500 text-sm"></div><div><label class="block text-xs font-bold text-slate-600 uppercase mb-1">Role Detail</label><input id="prof-detail" type="text" value="${u.roleDetail || ''}" class="w-full p-3 border rounded-xl text-sm"></div><div><label class="block text-xs font-bold text-slate-600 uppercase mb-1">Phone</label><input id="prof-phone" type="text" value="${u.phone || ''}" class="w-full p-3 border rounded-xl text-sm"></div><button type="submit" class="px-6 py-3 bg-emerald-600 text-white font-semibold rounded-xl text-sm shadow-md">Save Changes</button></form></div>`;
+            return `<div class="max-w-xl bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"><form onsubmit="updateProfile(event)" class="space-y-4"><div><label class="block text-xs font-bold text-slate-600 uppercase mb-1">Full Name</label><input id="prof-name" type="text" value="${u.name || ''}" class="w-full p-3 border rounded-xl text-sm"></div><div><label class="block text-xs font-bold text-slate-600 uppercase mb-1">Email</label><input type="email" value="${u.email}" disabled class="w-full p-3 border rounded-xl bg-slate-100 text-slate-500 text-sm"></div><div><label class="block text-xs font-bold text-slate-600 uppercase mb-1">Role Detail</label><input id="prof-detail" type="text" value="${u.roleDetail || ''}" class="w-full p-3 border rounded-xl text-sm"></div><div><label class="block text-xs font-bold text-slate-600 uppercase mb-1">Phone</label><input id="prof-phone" type="text" maxlength="11" pattern="09[0-9]{9}" value="${u.phone || ''}" class="w-full p-3 border rounded-xl text-sm"></div><button type="submit" class="px-6 py-3 bg-emerald-600 text-white font-semibold rounded-xl text-sm shadow-md">Save Changes</button></form></div>`;
         }
 
         async function updateProfile(e) {
             e.preventDefault();
+            appState.currentUser.name = document.getElementById('prof-name').value;
             appState.currentUser.roleDetail = document.getElementById('prof-detail').value;
             appState.currentUser.phone = document.getElementById('prof-phone').value;
             await db.collection('users').doc(appState.currentUser.id).update(appState.currentUser);
@@ -451,11 +458,11 @@
 
         function renderResidentRecordsTab() {
             const residents = appState.db.users.filter(u => u.role === 'Resident / Homeowner');
-            return `<div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"><table class="w-full text-left text-sm"><thead class="bg-slate-50 text-xs uppercase border-b"><tr><th class="p-3">Email</th><th class="p-3">House</th><th class="p-3">Phone</th></tr></thead><tbody class="divide-y">${residents.map(r=>`<tr><td class="p-3">${r.email}</td><td class="p-3">${r.roleDetail}</td><td class="p-3">${r.phone}</td></tr>`).join('')}</tbody></table></div>`;
+            return `<div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"><table class="w-full text-left text-sm"><thead class="bg-slate-50 text-xs uppercase border-b"><tr><th class="p-3">Name</th><th class="p-3">Email</th><th class="p-3">House</th><th class="p-3">Phone</th></tr></thead><tbody class="divide-y">${residents.map(r=>`<tr><td class="p-3 font-semibold">${r.name || 'N/A'}</td><td class="p-3">${r.email}</td><td class="p-3">${r.roleDetail}</td><td class="p-3">${r.phone}</td></tr>`).join('')}</tbody></table></div>`;
         }
 
         function renderRequestsManagementTab() {
-            return `<div class="space-y-4">${appState.db.requests.map(req=>`<div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex justify-between items-center"><div><span class="px-2 py-0.5 text-[10px] font-bold rounded ${req.status==='Resolved'?'bg-emerald-100 text-emerald-700':'bg-amber-100 text-amber-700'}">${req.status}</span><h4 class="font-bold mt-1">${req.category} - ${req.location}</h4><p class="text-sm text-slate-600">${req.desc}</p></div><button onclick="updateRequestStatus('${req.id}', 'Resolved')" class="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold">Mark Resolved</button></div>`).join('')}</div>`;
+            return `<div class="space-y-4">${appState.db.requests.map(req=>`<div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex justify-between items-center"><div><span class="px-2 py-0.5 text-[10px] font-bold rounded ${req.status==='Resolved'?'bg-emerald-100 text-emerald-700':'bg-amber-100 text-amber-700'}">${req.status}</span><h4 class="font-bold mt-1">${req.category} - ${req.location}</h4><p class="text-xs text-slate-400">By: ${req.name || req.account}</p><p class="text-sm text-slate-600 mt-1">${req.desc}</p></div><button onclick="updateRequestStatus('${req.id}', 'Resolved')" class="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold">Mark Resolved</button></div>`).join('')}</div>`;
         }
 
         async function updateRequestStatus(id, status) {
@@ -474,7 +481,7 @@
                 category: document.getElementById('ann-cat').value,
                 content: document.getElementById('ann-content').value,
                 date: new Date().toISOString().split('T')[0],
-                author: appState.currentUser.email
+                author: appState.currentUser.name || appState.currentUser.email
             });
             showToast("Announcement published!");
             setTab('announcements');
