@@ -1,0 +1,501 @@
+
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-50">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeighborSync - Residential Community & Homeowners Association System</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f7ff',
+                            100: '#e0effe',
+                            500: '#2563eb',
+                            600: '#1d4ed8',
+                            700: '#1e40af',
+                            900: '#1e3a8a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="h-full text-slate-800 flex flex-col antialiased">
+
+    <!-- TOAST NOTIFICATION -->
+    <div id="toast" class="fixed bottom-5 right-5 z-50 transform translate-y-20 opacity-0 transition-all duration-300 ease-in-out flex items-center p-4 mb-4 text-slate-800 bg-white rounded-xl shadow-2xl border border-slate-100 max-w-md pointer-events-none">
+        <div id="toast-icon" class="inline-flex items-center justify-center flex-shrink-0 w-8 h-8 rounded-lg bg-blue-100 text-blue-600 mr-3">
+            <i class="fa-solid fa-info-circle"></i>
+        </div>
+        <div class="text-sm font-medium pr-2" id="toast-msg">Notification message here</div>
+    </div>
+
+    <!-- MAIN APP CONTAINER -->
+    <div id="app" class="h-full flex flex-col"></div>
+
+    <!-- SYSTEM JAVASCRIPT LOGIC -->
+    <script>
+        // --- FIREBASE CONFIGURATION ---
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_PROJECT_ID.appspot.com",
+            messagingSenderId: "YOUR_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+
+        // App State Management with Firestore Data Sync
+        let appState = {
+            authMode: 'login',
+            currentUser: null,
+            currentRole: 'Resident / Homeowner',
+            activeTab: 'announcements',
+            db: {
+                users: [],
+                announcements: [],
+                requests: [],
+                events: [],
+                documents: [],
+                logs: []
+            }
+        };
+
+        function showToast(msg, type = "info") {
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toast-msg');
+            toastMsg.innerText = msg;
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            toast.classList.add('translate-y-0', 'opacity-100');
+            setTimeout(() => {
+                toast.classList.remove('translate-y-0', 'opacity-100');
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+
+        function setAuthMode(mode) {
+            appState.authMode = mode;
+            renderAuthScreen();
+        }
+
+        // Real-time synchronization listeners with Firestore
+        function initRealtimeListeners() {
+            db.collection('announcements').onSnapshot(snapshot => {
+                appState.db.announcements = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                if (appState.currentUser) renderDashboard();
+            });
+
+            db.collection('requests').onSnapshot(snapshot => {
+                appState.db.requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                if (appState.currentUser) renderDashboard();
+            });
+
+            db.collection('users').onSnapshot(snapshot => {
+                appState.db.users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                if (appState.currentUser) renderDashboard();
+            });
+
+            db.collection('events').onSnapshot(snapshot => {
+                appState.db.events = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                if (appState.currentUser) renderDashboard();
+            });
+
+            db.collection('documents').onSnapshot(snapshot => {
+                appState.db.documents = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                if (appState.currentUser) renderDashboard();
+            });
+        }
+
+        // Render Authentication View
+        function renderAuthScreen(errorMsg = null) {
+            const app = document.getElementById('app');
+            const isReg = appState.authMode === 'register';
+
+            app.innerHTML = `
+                <div class="min-h-screen bg-slate-900 flex flex-col justify-center items-center p-4 relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl"></div>
+                    <div class="absolute bottom-0 right-0 w-96 h-96 bg-purple-600/20 rounded-full blur-3xl"></div>
+
+                    <div class="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8 relative z-10 border border-slate-100">
+                        <div class="text-center mb-6">
+                            <div class="inline-flex p-3 bg-blue-600 text-white rounded-xl shadow-lg mb-3">
+                                <i class="fa-solid fa-house-chimney-window text-3xl"></i>
+                            </div>
+                            <h1 class="text-2xl font-bold text-slate-800 tracking-tight">NeighborSync</h1>
+                            <p class="text-xs font-semibold text-blue-600 tracking-wider uppercase mt-1">Cloud Database Edition</p>
+                        </div>
+
+                        <div class="flex border-b border-slate-200 mb-6 text-sm font-semibold">
+                            <button onclick="setAuthMode('login')" class="flex-1 pb-2 border-b-2 ${!isReg ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}">Sign In</button>
+                            <button onclick="setAuthMode('register')" class="flex-1 pb-2 border-b-2 ${isReg ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}">Register Account</button>
+                        </div>
+
+                        ${errorMsg ? `
+                            <div class="mb-5 p-3.5 bg-rose-50 border border-rose-200 rounded-xl flex items-center space-x-3 text-rose-700 text-sm">
+                                <i class="fa-solid fa-circle-exclamation text-lg"></i>
+                                <span>${errorMsg}</span>
+                            </div>
+                        ` : ''}
+
+                        ${!isReg ? `
+                            <form onsubmit="handleLogin(event)" class="space-y-4">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Account Email</label>
+                                    <input type="email" id="auth-email" required placeholder="user@domain.com" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Password</label>
+                                    <input type="password" id="auth-password" required placeholder="••••••••" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                </div>
+                                <button type="submit" class="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-lg transition duration-150">
+                                    Sign In
+                                </button>
+                            </form>
+                        ` : `
+                            <form onsubmit="handleRegister(event)" class="space-y-4">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Select Account Role *</label>
+                                    <select id="reg-role" onchange="renderRoleSpecificFields(this.value)" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                        <option value="Resident / Homeowner">Resident / Homeowner</option>
+                                        <option value="HOA Officer">HOA Officer</option>
+                                        <option value="Administrator">Administrator</option>
+                                        <option value="Community Staff">Community Staff</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Email Address *</label>
+                                    <input type="email" id="reg-email" required placeholder="name@domain.com" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Contact Phone *</label>
+                                    <input type="text" id="reg-phone" required placeholder="555-0100" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                </div>
+                                <div id="role-extra-fields"></div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Create Password *</label>
+                                    <input type="password" id="reg-password" required placeholder="••••••••" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                </div>
+                                <button type="submit" class="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl shadow-lg transition duration-150">
+                                    Register Account
+                                </button>
+                            </form>
+                        `}
+                    </div>
+                </div>
+            `;
+            if (isReg) renderRoleSpecificFields('Resident / Homeowner');
+        }
+
+        function renderRoleSpecificFields(role) {
+            const container = document.getElementById('role-extra-fields');
+            if(!container) return;
+            if (role === 'Resident / Homeowner') {
+                container.innerHTML = `<div><label class="block text-xs font-semibold text-slate-600 uppercase mb-1">House / Lot Number *</label><input type="text" id="reg-detail" required placeholder="Block 4 Lot 12" class="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm"></div>`;
+            } else if (role === 'HOA Officer') {
+                container.innerHTML = `<div><label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Officer Title *</label><input type="text" id="reg-detail" required placeholder="President, Treasurer..." class="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm"></div>`;
+            } else if (role === 'Administrator') {
+                container.innerHTML = `<div><label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Admin Tier *</label><select id="reg-detail" class="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm"><option>System Administrator Level 1</option><option>System Administrator Level 2</option></select></div>`;
+            } else if (role === 'Community Staff') {
+                container.innerHTML = `<div><label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Department *</label><input type="text" id="reg-detail" required placeholder="Maintenance Bay A" class="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm"></div>`;
+            }
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const email = document.getElementById('auth-email').value;
+            const password = document.getElementById('auth-password').value;
+
+            try {
+                const userCred = await auth.signInWithEmailAndPassword(email, password);
+                const userDoc = await db.collection('users').doc(userCred.user.uid).get();
+                
+                if (userDoc.exists) {
+                    appState.currentUser = userDoc.data();
+                    appState.currentRole = appState.currentUser.role;
+                    appState.activeTab = getDefaultTabForRole(appState.currentRole);
+                    showToast("Login Successful!");
+                    renderDashboard();
+                } else {
+                    renderAuthScreen("User record not found in database.");
+                }
+            } catch (err) {
+                renderAuthScreen(err.message);
+            }
+        }
+
+        async function handleRegister(e) {
+            e.preventDefault();
+            const role = document.getElementById('reg-role').value;
+            const email = document.getElementById('reg-email').value;
+            const phone = document.getElementById('reg-phone').value;
+            const password = document.getElementById('reg-password').value;
+            const detailElem = document.getElementById('reg-detail');
+            const roleDetail = detailElem ? detailElem.value : '';
+
+            try {
+                const userCred = await auth.createUserWithEmailAndPassword(email, password);
+                const uid = userCred.user.uid;
+                const newUser = { id: uid, email, role, phone, roleDetail };
+
+                await db.collection('users').doc(uid).set(newUser);
+                appState.currentUser = newUser;
+                appState.currentRole = role;
+                appState.activeTab = getDefaultTabForRole(role);
+
+                showToast("Account created successfully!");
+                renderDashboard();
+            } catch (err) {
+                renderAuthScreen(err.message);
+            }
+        }
+
+        async function handleLogout() {
+            await auth.signOut();
+            appState.currentUser = null;
+            renderAuthScreen();
+            showToast("Logged out successfully");
+        }
+
+        function getDefaultTabForRole(role) {
+            switch(role) {
+                case 'Resident / Homeowner': return 'announcements';
+                case 'HOA Officer': return 'records';
+                case 'Administrator': return 'users';
+                case 'Community Staff': return 'staff-requests';
+                default: return 'announcements';
+            }
+        }
+
+        function renderDashboard() {
+            const app = document.getElementById('app');
+            app.innerHTML = `
+                <div class="flex h-screen bg-slate-100 overflow-hidden">
+                    <aside class="w-64 bg-slate-900 text-slate-300 flex flex-col flex-shrink-0">
+                        <div class="p-5 flex items-center justify-between border-b border-slate-800">
+                            <div class="flex items-center space-x-3">
+                                <div class="p-2 bg-blue-600 text-white rounded-lg">
+                                    <i class="fa-solid fa-house-chimney-window"></i>
+                                </div>
+                                <span class="font-bold text-lg text-white tracking-wide">NeighborSync</span>
+                            </div>
+                        </div>
+                        <div class="p-4 bg-slate-800/60 mx-3 my-3 rounded-xl border border-slate-700/50">
+                            <label class="block text-[10px] font-bold tracking-wider text-slate-400 uppercase mb-1">Active Role</label>
+                            <select onchange="switchRole(this.value)" class="w-full bg-slate-900 text-white text-xs font-medium rounded-lg p-2 border border-slate-700">
+                                <option value="Resident / Homeowner" ${appState.currentRole === 'Resident / Homeowner' ? 'selected' : ''}>Resident / Homeowner</option>
+                                <option value="HOA Officer" ${appState.currentRole === 'HOA Officer' ? 'selected' : ''}>HOA Officer</option>
+                                <option value="Administrator" ${appState.currentRole === 'Administrator' ? 'selected' : ''}>Administrator</option>
+                                <option value="Community Staff" ${appState.currentRole === 'Community Staff' ? 'selected' : ''}>Community Staff</option>
+                            </select>
+                        </div>
+                        <nav class="flex-1 px-3 py-2 space-y-1 overflow-y-auto custom-scrollbar">${renderNavItems()}</nav>
+                        <div class="p-3 border-t border-slate-800">
+                            <div class="flex items-center justify-between p-2 bg-slate-800 rounded-lg">
+                                <div class="flex items-center space-x-2 truncate">
+                                    <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold text-xs"><i class="fa-solid fa-user"></i></div>
+                                    <div class="truncate">
+                                        <p class="text-xs font-medium text-white truncate">${appState.currentUser.email}</p>
+                                        <p class="text-[10px] text-slate-400 truncate">${appState.currentRole}</p>
+                                    </div>
+                                </div>
+                                <button onclick="handleLogout()" class="text-slate-400 hover:text-rose-400 p-1.5"><i class="fa-solid fa-right-from-bracket"></i></button>
+                            </div>
+                        </div>
+                    </aside>
+                    <main class="flex-1 flex flex-col overflow-hidden">
+                        <header class="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between">
+                            <h2 class="text-lg font-bold text-slate-800">${getTabTitle()}</h2>
+                            <span class="px-3 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded-full border border-blue-200">${appState.currentRole}</span>
+                        </header>
+                        <div class="flex-1 overflow-y-auto p-6 custom-scrollbar bg-slate-50" id="workspace">
+                            ${renderWorkspaceContent()}
+                        </div>
+                    </main>
+                </div>
+            `;
+        }
+
+        function switchRole(newRole) {
+            appState.currentRole = newRole;
+            appState.activeTab = getDefaultTabForRole(newRole);
+            renderDashboard();
+        }
+
+        function setTab(tab) {
+            appState.activeTab = tab;
+            renderDashboard();
+        }
+
+        function renderNavItems() {
+            const role = appState.currentRole;
+            let items = [];
+            if (role === 'Resident / Homeowner') {
+                items = [{ id: 'announcements', label: 'Announcements', icon: 'fa-bullhorn' }, { id: 'submit-concern', label: 'Submit Concern/Request', icon: 'fa-pen-to-square' }, { id: 'community-info', label: 'Community Directory', icon: 'fa-circle-info' }, { id: 'profile', label: 'Account Profile', icon: 'fa-user-gear' }];
+            } else if (role === 'HOA Officer') {
+                items = [{ id: 'records', label: 'Manage Members', icon: 'fa-users' }, { id: 'officer-requests', label: 'Respond to Requests', icon: 'fa-inbox' }, { id: 'post-announcements', label: 'Post Announcements', icon: 'fa-paper-plane' }, { id: 'events', label: 'Manage Events', icon: 'fa-calendar-days' }, { id: 'documents', label: 'HOA Documents', icon: 'fa-folder-open' }, { id: 'reports', label: 'Generate Reports', icon: 'fa-chart-pie' }];
+            } else if (role === 'Administrator') {
+                items = [{ id: 'users', label: 'Manage Accounts & Roles', icon: 'fa-user-gear' }, { id: 'all-records', label: 'Master Database', icon: 'fa-database' }, { id: 'settings', label: 'System Settings', icon: 'fa-sliders' }];
+            } else if (role === 'Community Staff') {
+                items = [{ id: 'assist', label: 'Assist Residents', icon: 'fa-headset' }, { id: 'staff-requests', label: 'Handle Maintenance', icon: 'fa-wrench' }];
+            }
+            return items.map(item => `
+                <button onclick="setTab('${item.id}')" class="w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${appState.activeTab === item.id ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}">
+                    <i class="fa-solid ${item.icon} w-5 text-center text-sm"></i>
+                    <span class="truncate">${item.label}</span>
+                </button>
+            `).join('');
+        }
+
+        function getTabTitle() {
+            const titles = {
+                'announcements': 'Community Announcements', 'submit-concern': 'Submit Maintenance & Concern Request',
+                'community-info': 'Community Directory & Resources', 'profile': 'Account & Role Settings',
+                'records': 'HOA Member Management', 'officer-requests': 'Resident Requests Management',
+                'post-announcements': 'Create Community Announcements', 'events': 'Events & Community Calendar',
+                'documents': 'HOA Official Documents Repository', 'reports': 'Community Reports & Analytics',
+                'users': 'System Account & Role Management', 'all-records': 'Master System Database Inspector',
+                'settings': 'System Global Preferences', 'assist': 'Resident Inquiries & Assistance Bay',
+                'staff-requests': 'Maintenance Queue & Operations'
+            };
+            return titles[appState.activeTab] || 'Dashboard Workspace';
+        }
+
+        function renderWorkspaceContent() {
+            switch(appState.activeTab) {
+                case 'announcements': return renderAnnouncementsTab();
+                case 'submit-concern': return renderSubmitConcernTab();
+                case 'community-info': return renderCommunityInfoTab();
+                case 'profile': return renderProfileTab();
+                case 'records': return renderResidentRecordsTab();
+                case 'officer-requests': return renderRequestsManagementTab();
+                case 'post-announcements': return renderPostAnnouncementTab();
+                case 'events': return renderEventsTab();
+                case 'documents': return renderDocumentsTab();
+                case 'reports': return renderReportsTab();
+                case 'users': return renderUsersTab();
+                case 'all-records': return renderAllRecordsTab();
+                case 'settings': return renderSettingsTab();
+                case 'assist': return renderAssistTab();
+                case 'staff-requests': return renderRequestsManagementTab();
+                default: return `<div class="p-8 text-center text-slate-500">Select a menu option from the sidebar.</div>`;
+            }
+        }
+
+        function renderAnnouncementsTab() {
+            return `<div class="space-y-4">${appState.db.announcements.map(a => `<div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-2"><div class="flex justify-between items-center"><span class="px-2.5 py-1 text-[10px] font-bold rounded-md bg-blue-100 text-blue-800">${a.category}</span><span class="text-xs text-slate-400">${a.date}</span></div><h3 class="font-bold text-slate-800 text-lg">${a.title}</h3><p class="text-sm text-slate-600">${a.content}</p></div>`).join('')}</div>`;
+        }
+
+        function renderSubmitConcernTab() {
+            return `<div class="max-w-2xl bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"><form onsubmit="submitConcern(event)" class="space-y-4"><div><label class="block text-xs font-bold text-slate-600 uppercase mb-1">Issue Category</label><select id="concern-cat" class="w-full p-3 border rounded-xl text-sm"><option>Plumbing & Water</option><option>Electrical & Streetlights</option><option>Landscaping & Trees</option><option>Security & Noise</option></select></div><div><label class="block text-xs font-bold text-slate-600 uppercase mb-1">Location / Zone</label><input id="concern-loc" type="text" required class="w-full p-3 border rounded-xl text-sm"></div><div><label class="block text-xs font-bold text-slate-600 uppercase mb-1">Description</label><textarea id="concern-desc" rows="4" required class="w-full p-3 border rounded-xl text-sm"></textarea></div><button type="submit" class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-sm shadow-md">Submit Request</button></form></div>`;
+        }
+
+        async function submitConcern(e) {
+            e.preventDefault();
+            await db.collection('requests').add({
+                account: appState.currentUser.email,
+                category: document.getElementById('concern-cat').value,
+                location: document.getElementById('concern-loc').value,
+                desc: document.getElementById('concern-desc').value,
+                status: 'Pending',
+                date: new Date().toISOString().split('T')[0]
+            });
+            showToast("Request successfully sent to cloud database!");
+            setTab('announcements');
+        }
+
+        function renderCommunityInfoTab() {
+            const members = appState.db.users.filter(u => u.role === 'Resident / Homeowner');
+            return `<div class="grid grid-cols-1 md:grid-cols-2 gap-6"><div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"><h3 class="font-bold text-slate-800 mb-3">Members Directory</h3>${members.map(r=>`<div class="p-3 bg-slate-50 rounded-xl mb-2 flex justify-between text-sm"><div><p class="font-bold">${r.email}</p><p class="text-xs text-slate-500">${r.roleDetail || 'Resident'}</p></div><span class="text-xs">${r.phone}</span></div>`).join('')}</div></div>`;
+        }
+
+        function renderProfileTab() {
+            const u = appState.currentUser;
+            return `<div class="max-w-xl bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"><form onsubmit="updateProfile(event)" class="space-y-4"><div><label class="block text-xs font-bold text-slate-600 uppercase mb-1">Email</label><input type="email" value="${u.email}" disabled class="w-full p-3 border rounded-xl bg-slate-100 text-slate-500 text-sm"></div><div><label class="block text-xs font-bold text-slate-600 uppercase mb-1">Role Detail</label><input id="prof-detail" type="text" value="${u.roleDetail || ''}" class="w-full p-3 border rounded-xl text-sm"></div><div><label class="block text-xs font-bold text-slate-600 uppercase mb-1">Phone</label><input id="prof-phone" type="text" value="${u.phone || ''}" class="w-full p-3 border rounded-xl text-sm"></div><button type="submit" class="px-6 py-3 bg-emerald-600 text-white font-semibold rounded-xl text-sm shadow-md">Save Changes</button></form></div>`;
+        }
+
+        async function updateProfile(e) {
+            e.preventDefault();
+            appState.currentUser.roleDetail = document.getElementById('prof-detail').value;
+            appState.currentUser.phone = document.getElementById('prof-phone').value;
+            await db.collection('users').doc(appState.currentUser.id).update(appState.currentUser);
+            showToast("Profile updated!");
+        }
+
+        function renderResidentRecordsTab() {
+            const residents = appState.db.users.filter(u => u.role === 'Resident / Homeowner');
+            return `<div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"><table class="w-full text-left text-sm"><thead class="bg-slate-50 text-xs uppercase border-b"><tr><th class="p-3">Email</th><th class="p-3">House</th><th class="p-3">Phone</th></tr></thead><tbody class="divide-y">${residents.map(r=>`<tr><td class="p-3">${r.email}</td><td class="p-3">${r.roleDetail}</td><td class="p-3">${r.phone}</td></tr>`).join('')}</tbody></table></div>`;
+        }
+
+        function renderRequestsManagementTab() {
+            return `<div class="space-y-4">${appState.db.requests.map(req=>`<div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex justify-between items-center"><div><span class="px-2 py-0.5 text-[10px] font-bold rounded ${req.status==='Resolved'?'bg-emerald-100 text-emerald-700':'bg-amber-100 text-amber-700'}">${req.status}</span><h4 class="font-bold mt-1">${req.category} - ${req.location}</h4><p class="text-sm text-slate-600">${req.desc}</p></div><button onclick="updateRequestStatus('${req.id}', 'Resolved')" class="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold">Mark Resolved</button></div>`).join('')}</div>`;
+        }
+
+        async function updateRequestStatus(id, status) {
+            await db.collection('requests').doc(id).update({ status });
+            showToast("Request status updated in database!");
+        }
+
+        function renderPostAnnouncementTab() {
+            return `<div class="max-w-xl bg-white p-6 rounded-2xl border shadow-sm"><form onsubmit="postAnnouncement(event)" class="space-y-4"><div><label class="block text-xs font-bold text-slate-600 uppercase mb-1">Title</label><input id="ann-title" type="text" required class="w-full p-3 border rounded-xl text-sm"></div><div><label class="block text-xs font-bold text-slate-600 uppercase mb-1">Category</label><select id="ann-cat" class="w-full p-3 border rounded-xl text-sm"><option>General</option><option>Meeting</option><option>Alert</option></select></div><div><label class="block text-xs font-bold text-slate-600 uppercase mb-1">Content</label><textarea id="ann-content" rows="4" required class="w-full p-3 border rounded-xl text-sm"></textarea></div><button type="submit" class="px-6 py-3 bg-blue-600 text-white font-semibold rounded-xl text-sm">Publish</button></form></div>`;
+        }
+
+        async function postAnnouncement(e) {
+            e.preventDefault();
+            await db.collection('announcements').add({
+                title: document.getElementById('ann-title').value,
+                category: document.getElementById('ann-cat').value,
+                content: document.getElementById('ann-content').value,
+                date: new Date().toISOString().split('T')[0],
+                author: appState.currentUser.email
+            });
+            showToast("Announcement published!");
+            setTab('announcements');
+        }
+
+        function renderEventsTab() { return `<div class="bg-white p-6 rounded-2xl border shadow-sm"><p class="text-sm">Manage community schedules and club events here.</p></div>`; }
+        function renderDocumentsTab() { return `<div class="bg-white p-6 rounded-2xl border shadow-sm"><p class="text-sm">HOA Official Document Storage.</p></div>`; }
+        function renderReportsTab() { return renderReportsTabHelper(); }
+        function renderUsersTab() { return `<div class="bg-white p-6 rounded-2xl border shadow-sm"><p class="text-sm">Manage user accounts and system roles.</p></div>`; }
+        function renderAllRecordsTab() { return `<div class="bg-white p-5 rounded-2xl border shadow-sm"><pre class="bg-slate-900 text-emerald-400 p-4 rounded-xl text-xs overflow-x-auto">${JSON.stringify(appState.db, null, 2)}</pre></div>`; }
+        function renderSettingsTab() { return `<div class="bg-white p-6 rounded-2xl border shadow-sm"><p class="text-sm">Global system rules & properties.</p></div>`; }
+        function renderAssistTab() { return `<div class="bg-white p-6 rounded-2xl border shadow-sm"><p class="text-sm">Support Queue online.</p></div>`; }
+        function renderReportsTabHelper() {
+            return `<div class="grid grid-cols-3 gap-4"><div class="bg-white p-5 rounded-2xl border shadow-sm"><p class="text-xs text-slate-400 font-bold">Users</p><h3 class="text-3xl font-extrabold text-blue-600 mt-2">${appState.db.users.length}</h3></div></div>`;
+        }
+
+        // Initialize App & Listeners
+        window.onload = function() {
+            initRealtimeListeners();
+            renderAuthScreen();
+        };
+    </script>
+</body>
+</html>
